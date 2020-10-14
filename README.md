@@ -1,6 +1,7 @@
-# RGM-Import
-Imports Audition RGM files into 3DS Max 2018
+### 📃 About
+My name is Daylon and I've been developing software for over 10 years. I have a bachelors degree in Computer Science and five years of experience in systems and network administration. Throughout the years I have gained varying degrees of experience in ASM, C++, C#, Java, Python, SQL, and countless frameworks.
 
-Usage:
+## ✉️ Contact
+Personal Inquiries: Discord @ Daylon#0001
 
-Place "rgm2max.dli" inside of the Plugins folder in your 3DS Max 2018 directory. Exporting will be under File -> Export -> RGM
+Professional Inquiries: Daylonz@pm.me

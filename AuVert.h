@@ -1,3 +1,5 @@
+#include "AuRigVert.h"
+
 class AuVert
 {
 public:
@@ -9,4 +11,6 @@ public:
 	float nz;
 	float u;
 	float v;
+	int numRigVerts;
+	AuRigVert** rigVerts;
 };

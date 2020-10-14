@@ -16,6 +16,7 @@ public:
 	int numMaterialIDs;
 	int numMaterials;
 	AuVert** verts;
+	AuVert** animverts;
 	AuFace** faces;
 	int** materialIDCounts;
 	AuMaterial** materials;

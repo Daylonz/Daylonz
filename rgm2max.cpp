@@ -13,6 +13,7 @@
 //***************************************************************************/
 
 #include "rgm2max.h"
+#include "VirtualizerSDK.h"
 
 #define rgm2max_CLASS_ID	Class_ID(0x6f5cb792, 0xa02697b6)
 
@@ -37,7 +38,14 @@ public:
 	std::map<short, std::wstring> nodeLookupTable;
 	unsigned short			nodeCounter = 0;
 	unsigned short			bipedalCounter = 0;
+	int						fps;
+	int						framesInScene;
 	AuModel					currentModel;
+	TriObject*				currentObject;
+	ImpNode*				currentImpNode;
+	INode*					currentNode;
+	int						rigMode = 0;
+	BOOL					stageImport = FALSE;
 
 	virtual int				DoImport(const TCHAR *name,ImpInterface *i,Interface *gi, BOOL suppressPrompts=FALSE);	// Import file
 	virtual char*			fgetstring(FILE* file);
@@ -46,7 +54,9 @@ public:
 	virtual void			parseNewNode(FILE* file);
 	virtual int				renderMesh(ImpInterface* ii, Interface* ip);
 	virtual int				parseMesh(FILE* file, ImpInterface* ii, Interface* ip);
-	virtual int				parseRig(FILE* file, Interface* ip);
+	virtual int				parseRig(FILE* file, Interface* ip, ImpInterface* ii);
+	//virtual int				rigPhysique(FILE* file, Interface* ip, ImpInterface* ii);
+	virtual int				rigSkin(FILE* file, Interface* ip, ImpInterface* ii);
 	StdMat*					GetMatForFlag(int flag, std::string name);
 };
 
@@ -77,20 +87,43 @@ ClassDesc2* Getrgm2maxDesc() {
 
 
 
-INT_PTR CALLBACK rgm2maxOptionsDlgProc(HWND hWnd,UINT message,WPARAM ,LPARAM lParam) {
+INT_PTR CALLBACK rgm2maxOptionsDlgProc(HWND hWnd,UINT message,WPARAM wParam,LPARAM lParam) {
+	VIRTUALIZER_EAGLE_BLACK_START
+	HWND cbx = NULL;
 	static rgm2max* imp = nullptr;
 
-	switch(message) {
+	switch (message)
+	{
 		case WM_INITDIALOG:
+			cbx = GetDlgItem(hWnd, IDC_COMBO2);
+			SendMessage(cbx, CB_ADDSTRING, 0, (LPARAM)L"Physique");
+			SendMessage(cbx, CB_ADDSTRING, 0, (LPARAM)L"Skin");
+			SendMessage(cbx, CB_SETCURSEL, 0, 0);
 			imp = (rgm2max *)lParam;
-			CenterWindow(hWnd,GetParent(hWnd));
+			CenterWindow(hWnd, GetParent(hWnd));
 			return TRUE;
 
 		case WM_CLOSE:
 			EndDialog(hWnd, 0);
 			return 1;
+		case WM_COMMAND:
+			switch (LOWORD(wParam))
+			{
+			case IDC_BUTTON1:
+				if (IsDlgButtonChecked(hWnd, IDC_CHECK1))
+				{
+					imp->stageImport = TRUE;
+				}
+				if (SendMessage(cbx, CB_GETCURSEL, 0, 0) == 1)
+				{
+					imp->rigMode = 1;
+				}
+				EndDialog(hWnd, 0);
+				break;
+			}
 	}
 	return 0;
+	VIRTUALIZER_EAGLE_BLACK_END
 }
 
 
@@ -150,24 +183,22 @@ const TCHAR *rgm2max::OtherMessage2()
 
 unsigned int rgm2max::Version()
 {				
-	return 100;
+return 100;
 }
 
 void rgm2max::ShowAbout(HWND /*hWnd*/)
-{			
+{
 	// Optional
 }
 
-int rgm2max::DoImport(const TCHAR* name, ImpInterface* ii, Interface* ip, BOOL /*suppressPrompts*/)
+int rgm2max::DoImport(const TCHAR* name, ImpInterface* ii, Interface* ip, BOOL suppressPrompts)
 {
-	#pragma message(TODO("Implement the actual file import here and"))	
-	//if(!suppressPrompts)
-	//	DialogBoxParam(hInstance, 
-	//			MAKEINTRESOURCE(IDD_PANEL), 
-	//			GetActiveWindow(), 
-	//			rgm2maxOptionsDlgProc, (LPARAM)this);
-	//
-	#pragma message(TODO("return TRUE If the file is imported properly"))
+	VIRTUALIZER_EAGLE_BLACK_START
+	if (!suppressPrompts)
+		DialogBoxParam(hInstance,
+			MAKEINTRESOURCE(IDD_PANEL),
+			GetActiveWindow(),
+			rgm2maxOptionsDlgProc, (LPARAM)this);
 
 	FILE* file;
 	bstr_t b(name);
@@ -187,6 +218,7 @@ int rgm2max::DoImport(const TCHAR* name, ImpInterface* ii, Interface* ip, BOOL /
 	parseFile(file, ii, ip);
 	fclose(file);
 	return TRUE;
+	VIRTUALIZER_EAGLE_BLACK_END
 }
 
 char* rgm2max::fgetstring(FILE* file)
@@ -201,11 +233,11 @@ char* rgm2max::fgetstring(FILE* file)
 		mem += 1;
 		if (next_read == '\0')
 		{
-			str = (char*)MAX_realloc(str, mem + sizeof(char));
+			str = (char*)realloc(str, mem + sizeof(char));
 			str[mem] = next_read;
 			break;
 		}
-		str = (char*)MAX_realloc(str, mem + sizeof(char));
+		str = (char*)realloc(str, mem + sizeof(char));
 		str[mem] = next_read;
 	}
 	return str;
@@ -230,8 +262,6 @@ void rgm2max::parseNames(FILE* file)
 
 void rgm2max::parseFile(FILE* file, ImpInterface* ii, Interface* ip)
 {
-	int fps;
-	int framesInScene;
 	fread(&fps, 4, 1, file);
 	fread(&framesInScene, 4, 1, file);
 
@@ -240,29 +270,40 @@ void rgm2max::parseFile(FILE* file, ImpInterface* ii, Interface* ip)
 	{
 		switch (i)
 		{
-			case 0x2A: //new node
-				parseNewNode(file);
-				if (parseMesh(file, ii, ip) != 0)
-					return;
-				break;
-			case 0x6D: //anim data
-				MessageBoxA(ip->GetMAXHWnd(), "Error 6D: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
+		case 0x2A: //new node
+			parseNewNode(file);
+			if (parseMesh(file, ii, ip) != 0)
 				return;
-			case 0x70: //??? Not yet supported
-				MessageBoxA(ip->GetMAXHWnd(), "Error 70: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
+			break;
+		case 0x6D: //anim data
+			VIRTUALIZER_FISH_RED_START
+			MessageBoxA(ip->GetMAXHWnd(), "Error 6D: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
+			VIRTUALIZER_FISH_RED_END
+			return;
+		case 0x70: //??? Not yet supported
+			VIRTUALIZER_FISH_RED_START
+			MessageBoxA(ip->GetMAXHWnd(), "Error 70: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
+			VIRTUALIZER_FISH_RED_END
+			return;
+		case 0x71: //rigging data
+			//if (parseRig(file, ip, ii) == 1)
 				return;
-			case 0x71: //rigging data
-				MessageBoxA(ip->GetMAXHWnd(), "Error 71: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
-				return;
+			break;
 			case 0x72: //??? Not yet supported
+				VIRTUALIZER_FISH_RED_START
 				MessageBoxA(ip->GetMAXHWnd(), "Error 72: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
+				VIRTUALIZER_FISH_RED_END
 				return;
 			case 0x73: //scale factor. Maybe we can support this if we find an example of it?
+				VIRTUALIZER_FISH_RED_START
 				MessageBoxA(ip->GetMAXHWnd(), "Error 73: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
+				VIRTUALIZER_FISH_RED_END
 				return;
 			default:
+				VIRTUALIZER_FISH_RED_START
 				MessageBoxA(ip->GetMAXHWnd(), "Error D: Unknown byte at offset...", "RGM Import - By Daylon", MB_ICONINFORMATION);
 				MessageBoxA(ip->GetMAXHWnd(), std::to_string(ftell(file)).c_str(), "RGM Import - By Daylon", MB_ICONINFORMATION);
+				VIRTUALIZER_FISH_RED_END
 				return;
 
 		}
@@ -280,6 +321,7 @@ void rgm2max::parseNewNode(FILE* file)
 
 int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 {
+	VIRTUALIZER_FISH_RED_START
 	Matrix3 matrix;
 	Point3 row1;
 	Point3 row2;
@@ -292,11 +334,11 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 	fread(&row3.x, 4, 1, file);
 	fread(&row3.z, 4, 1, file);
 	fread(&row3.y, 4, 1, file);
-	matrix.SetRow(1, row2);
+	matrix.SetRow(2, row3);
 	fread(&row2.x, 4, 1, file);
 	fread(&row2.z, 4, 1, file);
 	fread(&row2.y, 4, 1, file);
-	matrix.SetRow(2, row3);
+	matrix.SetRow(1, row2);
 	fread(&row4.x, 4, 1, file);
 	fread(&row4.z, 4, 1, file);
 	fread(&row4.y, 4, 1, file);
@@ -307,11 +349,24 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 	if (currentModel.numVerts > 0)
 	{
 		fread(&currentModel.lightObjectFlag, 1, 1, file);
-		if (currentModel.lightObjectFlag > 0)
+		if (currentModel.lightObjectFlag > 0) // this means the mesh is animated
 		{
 			//do something
-			MessageBoxA(ip->GetMAXHWnd(), "RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
-			return 1;
+			currentModel.animverts = new AuVert*[currentModel.numVerts * (framesInScene + 1)];
+			for (int i = 0; i < (framesInScene + 1); i++)
+			{
+				for (int j = 0; j < currentModel.numVerts; j++)
+				{
+					AuVert* vert = new AuVert;
+					fread(&vert->x, 4, 1, file);
+					fread(&vert->z, 4, 1, file);
+					fread(&vert->y, 4, 1, file);
+					fread(&vert->nx, 4, 1, file);
+					fread(&vert->nz, 4, 1, file);
+					fread(&vert->ny, 4, 1, file);
+					currentModel.animverts[(i * currentModel.numVerts) + j] = vert;
+				}
+			}
 		}
 		currentModel.verts = new AuVert*[currentModel.numVerts];
 		for (int i = 0; i < currentModel.numVerts; i++)
@@ -355,7 +410,7 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 		{
 			AuMaterial* newMat = new AuMaterial;
 			newMat->name = fgetstring(file);
-			int charsToSkip = 39 - newMat->name.length();
+			long charsToSkip = 39 - (long)newMat->name.length();
 			fseek(file, charsToSkip, SEEK_CUR);
 			newMat->materialFlag = fgetc(file);
 			currentModel.materials[i] = newMat;
@@ -367,10 +422,12 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 		}
 	}
 	return 0;
+	VIRTUALIZER_FISH_RED_END
 }
 	
 int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 {
+	VIRTUALIZER_FISH_RED_START
 	Matrix3 transform;
 	Point3 p;
 	Point3 n;
@@ -378,6 +435,7 @@ int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 	TriObject* object = CreateNewTriObject();
 	Mesh* m = &object->GetMesh();
 
+	currentObject = object; // Assign object
 	m->setNumVerts(currentModel.numVerts); // set num verts
 	m->setNumTVerts(currentModel.numVerts); // set num tverts
 	m->setNumFaces(currentModel.numFaces); // set num faces
@@ -421,37 +479,6 @@ int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 		faces[i].SetNormalID(1, currentModel.faces[i]->indexY);
 		faces[i].SetNormalID(2, currentModel.faces[i]->indexZ);
 	}
-	/*
-	for (int i = 0; i < m->getNumVerts(); i++) // set normals
-	{
-		n.x = currentModel.verts[i]->nx;
-		n.y = currentModel.verts[i]->ny;
-		n.z = currentModel.verts[i]->nz;
-
-		m->setNormal(i, n);
-	}
-
-	MeshNormalSpec* nspec = m->GetSpecifiedNormals();
-
-	if (nspec && !nspec->GetFlag(MESH_NORMAL_NORMALS_BUILT))
-	{
-		m->SpecifyNormals();
-		nspec = m->GetSpecifiedNormals();
-	}
-	nspec->ClearFlag(MESH_NORMAL_NORMALS_BUILT);
-	nspec->CheckNormals();
-	Point3* normals = nspec->GetNormalArray();
-	for (int i = 0; i < nspec->GetNumNormals(); i++)
-	{
-		n.x = currentModel.verts[i]->nx;
-		n.y = currentModel.verts[i]->ny;
-		n.z = currentModel.verts[i]->nz;
-		normals[i] = n;
-		delete currentModel.verts[i];
-	}
-	nspec->SetAllExplicit(true);
-	*/
-
 	
 	// Setup UVW maps
 	m->setNumMaps(2); // 2 is minimum, 0 being color and 1 texture
@@ -503,22 +530,190 @@ int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 	m->InvalidateGeomCache();
 
 	ImpNode* node = ii->CreateNode();
+	currentImpNode = node;
 	if (!node)
 	{
 		return 1;
 	}
+	node->GetINode()->SetNodeTM(ip->GetTime(), currentModel.nodePos);
 	node->Reference(object);
+	currentNode = node->GetINode();
 	node->GetINode()->SetMtl(mat);
 
 	node->SetName(nodeLookupTable.find(currentModel.index - 1)->second.c_str());
-	//node->GetINode()->SetNodeTM(0, currentModel.nodePos);
 	ii->AddNodeToScene(node);
-	//node->SetName(_T("Test"));
 	ii->RedrawViews();
+
+	// Anim verts for mesh with anims
+	/*
+	if (currentModel.lightObjectFlag > 0)
+	{
+		for (int i = 0; i < (framesInScene + 1); i++)
+		{
+			ip->SetTime(i);
+			for (int j = 0; j < currentModel.numVerts; j++)
+			{
+				float x = currentModel.animverts[(i * (framesInScene + 1)) + j]->x;
+				float y = currentModel.animverts[(i * (framesInScene + 1)) + j]->y;
+				float z = currentModel.animverts[(i * (framesInScene + 1)) + j]->z;
+				m->verts[j].x = x;
+				m->verts[j].y = y;
+				m->verts[j].z = z;
+			}
+			ip->RedrawViews(i);
+		}
+	}
+	*/
 	return 0;
+	VIRTUALIZER_FISH_RED_END
 }
 
-int rgm2max::parseRig(FILE* file, Interface* ip)
+int rgm2max::parseRig(FILE* file, Interface* ip, ImpInterface* ii)
+{
+	VIRTUALIZER_FISH_BLACK_START
+	for (int i = 0; i < currentModel.numVerts; i++)
+	{
+		fread(&currentModel.verts[i]->numRigVerts, 4, 1, file);
+		currentModel.verts[i]->rigVerts = new AuRigVert*[currentModel.verts[i]->numRigVerts]; //allocate rig verts for this vertex
+		if (currentModel.verts[i]->numRigVerts == 1)
+		{
+			AuRigVert* rv = new AuRigVert;
+			rv->weight = 1.0f; // set weight
+			fread(&rv->boneID, 4, 1, file); // read bone ID
+			fread(&rv->x, 4, 1, file); // read x
+			fread(&rv->z, 4, 1, file); // read z
+			fread(&rv->y, 4, 1, file); // read y
+			currentModel.verts[i]->rigVerts[0] = rv;
+		}
+		else
+		{
+			for (int j = 0; j < currentModel.verts[i]->numRigVerts; j++)
+			{
+				AuRigVert* rv = new AuRigVert;
+				fread(&rv->weight, 4, 1, file); // read weight
+				fread(&rv->boneID, 4, 1, file); // read bone ID
+				fread(&rv->x, 4, 1, file); // read x
+				fread(&rv->z, 4, 1, file); // read z
+				fread(&rv->y, 4, 1, file); // read y
+				currentModel.verts[i]->rigVerts[j] = rv;
+			}
+		}
+	}
+
+	if (rigMode == 0)
+	{
+		//rigPhysique(file, ip, ii);
+	}
+	else
+	{
+		//rigSkin(file, ip, ii);
+	}
+
+	ii->RedrawViews();
+
+	return 0;
+	VIRTUALIZER_FISH_BLACK_END
+}
+
+/*
+int rgm2max::rigPhysique(FILE* file, Interface* ip, ImpInterface* ii)
+{
+	INode* toAttach;
+	AuBiped biped;
+	std::string nodeName;
+
+	Modifier *phyMod = (Modifier*)ii->Create(SClass_ID(OSM_CLASS_ID), Class_ID(PHYSIQUE_CLASS_ID_A, PHYSIQUE_CLASS_ID_B));
+
+	// Create the derived object for the skin modifier
+	IDerivedObject* meshDerived = CreateDerivedObject(currentObject);
+
+	if (meshDerived == NULL)
+		throw std::exception("meshDerived creation failed");
+
+	// Link modifier to derived object
+	meshDerived->AddModifier(phyMod);
+
+	// Link node to object
+	//currentImpNode->Reference(meshDerived);
+
+	IPhysiqueImport* phyImport = (IPhysiqueImport*)phyMod->GetInterface(I_PHYIMPORT);
+	toAttach = ip->GetINodeByName(TEXT("Bip01"));
+	if (toAttach == NULL)
+	{
+		throw std::exception("Could not find Biped");
+		return 1;
+	}
+	if (phyImport->AttachRootNode(toAttach, ip->GetTime()) == FALSE)
+	{
+		throw std::exception("Physique root node attach failed");
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	IPhyContextImport* contextImport = phyImport->GetContextInterface(currentNode);
+	if (contextImport == NULL)
+	{
+		throw std::exception("Physique context import returned null");
+	}
+	int a = contextImport->GetNumberVertices();
+
+	for (int i = 0; i < currentModel.numVerts; i++) // Set interface type for each vertex
+	{
+		if (currentModel.verts[i]->numRigVerts == 1)
+		{
+			IPhyRigidVertexImport* temp = (IPhyRigidVertexImport*)contextImport->SetVertexInterface(i, RIGID_NON_BLENDED_TYPE);
+
+			nodeName = biped.GetBipedNameFromID(currentModel.verts[i]->rigVerts[0]->boneID); // Grab info
+			std::wstring nodeNameW(nodeName.begin(), nodeName.end());
+			toAttach = ip->GetINodeByName(nodeNameW.c_str());
+
+			temp->SetNode(toAttach); // Attach node
+
+			contextImport->ReleaseVertexInterface(temp); // Release vertex interface
+		}
+		else
+		{
+			IPhyBlendedRigidVertexImport* temp = (IPhyBlendedRigidVertexImport*)contextImport->SetVertexInterface(i, BLENDED_TYPE);
+
+			for (int j = 0; j < currentModel.verts[i]->numRigVerts; j++)
+			{
+				nodeName = biped.GetBipedNameFromID(currentModel.verts[i]->rigVerts[j]->boneID); // Grab info
+				std::wstring nodeNameW(nodeName.begin(), nodeName.end());
+				toAttach = ip->GetINodeByName(nodeNameW.c_str());
+
+				if (j == 0)
+				{
+					temp->SetWeightedNode(toAttach, currentModel.verts[i]->rigVerts[j]->weight, TRUE); // Attach node and initialize
+				}
+				else
+				{
+					temp->SetWeightedNode(toAttach, currentModel.verts[i]->rigVerts[j]->weight, FALSE); // Attach node
+				}
+			}
+
+			contextImport->ReleaseVertexInterface(temp); // Release vertex interface
+		}
+	}
+	phyImport->ReleaseContextInterface(contextImport);
+	return 0;
+}
+*/
+
+int rgm2max::rigSkin(FILE* file, Interface* ip, ImpInterface* ii)
 {
 	return 0;
 }

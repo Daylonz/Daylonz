@@ -34,9 +34,11 @@
 #include <MeshNormalSpec.h>
 #include "imtl.h"
 #include <stdmat.h>
+#include <modstack.h>
 //SIMPLE TYPE
 
 #include "AuModel.h"
+#include "AuBiped.h"
 #include <impexp.h>
 #include <impapi.h>
 #include <direct.h>

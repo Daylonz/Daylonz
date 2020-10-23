@@ -55,7 +55,7 @@ public:
 	virtual int				renderMesh(ImpInterface* ii, Interface* ip);
 	virtual int				parseMesh(FILE* file, ImpInterface* ii, Interface* ip);
 	virtual int				parseRig(FILE* file, Interface* ip, ImpInterface* ii);
-	//virtual int				rigPhysique(FILE* file, Interface* ip, ImpInterface* ii);
+	virtual int				rigPhysique(FILE* file, Interface* ip, ImpInterface* ii);
 	virtual int				rigSkin(FILE* file, Interface* ip, ImpInterface* ii);
 	StdMat*					GetMatForFlag(int flag, std::string name);
 };
@@ -88,7 +88,7 @@ ClassDesc2* Getrgm2maxDesc() {
 
 
 INT_PTR CALLBACK rgm2maxOptionsDlgProc(HWND hWnd,UINT message,WPARAM wParam,LPARAM lParam) {
-	VIRTUALIZER_EAGLE_BLACK_START
+	//VIRTUALIZER_EAGLE_BLACK_START
 	HWND cbx = NULL;
 	static rgm2max* imp = nullptr;
 
@@ -123,7 +123,7 @@ INT_PTR CALLBACK rgm2maxOptionsDlgProc(HWND hWnd,UINT message,WPARAM wParam,LPAR
 			}
 	}
 	return 0;
-	VIRTUALIZER_EAGLE_BLACK_END
+	//VIRTUALIZER_EAGLE_BLACK_END
 }
 
 
@@ -193,7 +193,7 @@ void rgm2max::ShowAbout(HWND /*hWnd*/)
 
 int rgm2max::DoImport(const TCHAR* name, ImpInterface* ii, Interface* ip, BOOL suppressPrompts)
 {
-	VIRTUALIZER_EAGLE_BLACK_START
+	//VIRTUALIZER_EAGLE_BLACK_START
 	if (!suppressPrompts)
 		DialogBoxParam(hInstance,
 			MAKEINTRESOURCE(IDD_PANEL),
@@ -218,7 +218,7 @@ int rgm2max::DoImport(const TCHAR* name, ImpInterface* ii, Interface* ip, BOOL s
 	parseFile(file, ii, ip);
 	fclose(file);
 	return TRUE;
-	VIRTUALIZER_EAGLE_BLACK_END
+	//VIRTUALIZER_EAGLE_BLACK_END
 }
 
 char* rgm2max::fgetstring(FILE* file)
@@ -276,34 +276,34 @@ void rgm2max::parseFile(FILE* file, ImpInterface* ii, Interface* ip)
 				return;
 			break;
 		case 0x6D: //anim data
-			VIRTUALIZER_FISH_RED_START
+			//VIRTUALIZER_FISH_RED_START
 			MessageBoxA(ip->GetMAXHWnd(), "Error 6D: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
-			VIRTUALIZER_FISH_RED_END
+			//VIRTUALIZER_FISH_RED_END
 			return;
 		case 0x70: //??? Not yet supported
-			VIRTUALIZER_FISH_RED_START
+			//VIRTUALIZER_FISH_RED_START
 			MessageBoxA(ip->GetMAXHWnd(), "Error 70: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
-			VIRTUALIZER_FISH_RED_END
+			//VIRTUALIZER_FISH_RED_END
 			return;
 		case 0x71: //rigging data
 			//if (parseRig(file, ip, ii) == 1)
 				return;
 			break;
 			case 0x72: //??? Not yet supported
-				VIRTUALIZER_FISH_RED_START
+				//VIRTUALIZER_FISH_RED_START
 				MessageBoxA(ip->GetMAXHWnd(), "Error 72: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
-				VIRTUALIZER_FISH_RED_END
+				//VIRTUALIZER_FISH_RED_END
 				return;
 			case 0x73: //scale factor. Maybe we can support this if we find an example of it?
-				VIRTUALIZER_FISH_RED_START
+				//VIRTUALIZER_FISH_RED_START
 				MessageBoxA(ip->GetMAXHWnd(), "Error 73: RGM contains type not yet supported.", "RGM Import - By Daylon", MB_ICONINFORMATION);
-				VIRTUALIZER_FISH_RED_END
+				//VIRTUALIZER_FISH_RED_END
 				return;
 			default:
-				VIRTUALIZER_FISH_RED_START
+				//VIRTUALIZER_FISH_RED_START
 				MessageBoxA(ip->GetMAXHWnd(), "Error D: Unknown byte at offset...", "RGM Import - By Daylon", MB_ICONINFORMATION);
 				MessageBoxA(ip->GetMAXHWnd(), std::to_string(ftell(file)).c_str(), "RGM Import - By Daylon", MB_ICONINFORMATION);
-				VIRTUALIZER_FISH_RED_END
+				//VIRTUALIZER_FISH_RED_END
 				return;
 
 		}
@@ -321,7 +321,7 @@ void rgm2max::parseNewNode(FILE* file)
 
 int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 {
-	VIRTUALIZER_FISH_RED_START
+	//VIRTUALIZER_FISH_RED_START
 	Matrix3 matrix;
 	Point3 row1;
 	Point3 row2;
@@ -372,6 +372,7 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 		for (int i = 0; i < currentModel.numVerts; i++)
 		{
 			AuVert* vert = new AuVert;
+			float v;
 			fread(&vert->x, 4, 1, file);
 			fread(&vert->z, 4, 1, file);
 			fread(&vert->y, 4, 1, file);
@@ -379,12 +380,28 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 			fread(&vert->nz, 4, 1, file);
 			fread(&vert->ny, 4, 1, file);
 			fread(&vert->u, 4, 1, file);
-			float v;
 			fread(&v, 4, 1, file);
 			vert->v = 1 - v;
 			currentModel.verts[i] = vert;
 		}
+
 		fread(&currentModel.numFaces, 4, 1, file);
+		if (currentModel.numFaces == 0) //there's a second set of UVs?
+		{
+			currentModel.secondUV = new AuVert*[currentModel.numVerts];
+			currentModel.hasSecondUV = true;
+			for (int i = 0; i < currentModel.numVerts; i++)
+			{
+				AuVert* vert = new AuVert;
+				float v;
+				fread(&vert->u, 4, 1, file);
+				fread(&v, 4, 1, file);
+				vert->v = 1 - v;
+				currentModel.secondUV[i] = vert;
+			}
+			fread(&currentModel.numFaces, 4, 1, file);
+		}
+
 		currentModel.faces = new AuFace*[currentModel.numFaces];
 		for (int i = 0; i < currentModel.numFaces; i++)
 		{
@@ -405,15 +422,18 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 		}
 
 		fread(&currentModel.numMaterials, 4, 1, file); // read the number of materials
-		currentModel.materials = new AuMaterial*[currentModel.numMaterials];
-		for (int i = 0; i < currentModel.numMaterials; i++)
+		if (currentModel.numMaterials != -1)
 		{
-			AuMaterial* newMat = new AuMaterial;
-			newMat->name = fgetstring(file);
-			long charsToSkip = 39 - (long)newMat->name.length();
-			fseek(file, charsToSkip, SEEK_CUR);
-			newMat->materialFlag = fgetc(file);
-			currentModel.materials[i] = newMat;
+			currentModel.materials = new AuMaterial*[currentModel.numMaterials];
+			for (int i = 0; i < currentModel.numMaterials; i++)
+			{
+				AuMaterial* newMat = new AuMaterial;
+				newMat->name = fgetstring(file);
+				long charsToSkip = 39 - (long)newMat->name.length();
+				fseek(file, charsToSkip, SEEK_CUR);
+				newMat->materialFlag = fgetc(file);
+				currentModel.materials[i] = newMat;
+			}
 		}
 		if (renderMesh(ii, ip) == 1)
 		{
@@ -422,12 +442,12 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 		}
 	}
 	return 0;
-	VIRTUALIZER_FISH_RED_END
+	//VIRTUALIZER_FISH_RED_END
 }
 	
 int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 {
-	VIRTUALIZER_FISH_RED_START
+	//VIRTUALIZER_FISH_RED_START
 	Matrix3 transform;
 	Point3 p;
 	Point3 n;
@@ -481,15 +501,26 @@ int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 	}
 	
 	// Setup UVW maps
-	m->setNumMaps(2); // 2 is minimum, 0 being color and 1 texture
+	m->setNumMaps(currentModel.hasSecondUV ? 3 : 2); // 2 is minimum, 0 being color and 1 texture
 	m->setMapSupport(0, FALSE); // no color
 	m->setMapSupport(1, TRUE); // use texture
+	if (currentModel.hasSecondUV) // we have a second set of UVs
+	{
+		m->setMapSupport(2, TRUE);
+	}
 
-	m->setNumMapVerts(1, currentModel.numVerts);
+	m->setNumMapVerts(1, currentModel.numVerts); // set the UV vert count
+	if (currentModel.hasSecondUV) m->setNumMapVerts(2, currentModel.numVerts); // set the UV vert count for the second channel if needed
 	for (int i = 0; i < currentModel.numVerts; ++i) // Create texture verts
 	{
 		m->mapVerts(1)[i].Set(currentModel.verts[i]->u, currentModel.verts[i]->v, 0);
 		delete currentModel.verts[i];
+
+		if (currentModel.hasSecondUV)
+		{
+			m->mapVerts(2)[i].Set(currentModel.secondUV[i]->u, currentModel.secondUV[i]->v, 0);
+			delete currentModel.secondUV[i];
+		}
 	}
 
 	for (int i = 0; i < currentModel.numFaces; ++i) // Create texture faces
@@ -497,6 +528,13 @@ int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 		m->mapFaces(1)[i].setTVerts(currentModel.faces[i]->indexX,
 			currentModel.faces[i]->indexY,
 			currentModel.faces[i]->indexZ);
+
+		if (currentModel.hasSecondUV)
+		{
+			m->mapFaces(2)[i].setTVerts(currentModel.faces[i]->indexX,
+				currentModel.faces[i]->indexY,
+				currentModel.faces[i]->indexZ);
+		}
 		delete currentModel.faces[i];
 	}
 
@@ -565,12 +603,12 @@ int rgm2max::renderMesh(ImpInterface* ii, Interface* ip)
 	}
 	*/
 	return 0;
-	VIRTUALIZER_FISH_RED_END
+	//VIRTUALIZER_FISH_RED_END
 }
 
 int rgm2max::parseRig(FILE* file, Interface* ip, ImpInterface* ii)
 {
-	VIRTUALIZER_FISH_BLACK_START
+	//VIRTUALIZER_FISH_BLACK_START
 	for (int i = 0; i < currentModel.numVerts; i++)
 	{
 		fread(&currentModel.verts[i]->numRigVerts, 4, 1, file);
@@ -612,10 +650,10 @@ int rgm2max::parseRig(FILE* file, Interface* ip, ImpInterface* ii)
 	ii->RedrawViews();
 
 	return 0;
-	VIRTUALIZER_FISH_BLACK_END
+	//VIRTUALIZER_FISH_BLACK_END
 }
 
-/*
+
 int rgm2max::rigPhysique(FILE* file, Interface* ip, ImpInterface* ii)
 {
 	INode* toAttach;
@@ -711,7 +749,7 @@ int rgm2max::rigPhysique(FILE* file, Interface* ip, ImpInterface* ii)
 	phyImport->ReleaseContextInterface(contextImport);
 	return 0;
 }
-*/
+
 
 int rgm2max::rigSkin(FILE* file, Interface* ip, ImpInterface* ii)
 {

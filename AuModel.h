@@ -17,6 +17,8 @@ public:
 	int numMaterials;
 	AuVert** verts;
 	AuVert** animverts;
+	bool hasSecondUV;
+	AuVert** secondUV;
 	AuFace** faces;
 	int** materialIDCounts;
 	AuMaterial** materials;

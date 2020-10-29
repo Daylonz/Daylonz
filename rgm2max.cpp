@@ -226,6 +226,10 @@ char* rgm2max::fgetstring(FILE* file)
 	int mem = 0;
 	char* str = (char*)malloc(1);
 	char next_read = fgetc(file);
+	if (next_read == '\0' || next_read == -1)
+	{
+		return "";
+	}
 	str[mem] = next_read;
 	while (true)
 	{
@@ -286,7 +290,7 @@ void rgm2max::parseFile(FILE* file, ImpInterface* ii, Interface* ip)
 			//VIRTUALIZER_FISH_RED_END
 			return;
 		case 0x71: //rigging data
-			//if (parseRig(file, ip, ii) == 1)
+			if (parseRig(file, ip, ii) == 1)
 				return;
 			break;
 			case 0x72: //??? Not yet supported
@@ -351,9 +355,9 @@ int rgm2max::parseMesh(FILE* file, ImpInterface* ii, Interface* ip)
 		fread(&currentModel.lightObjectFlag, 1, 1, file);
 		if (currentModel.lightObjectFlag > 0) // this means the mesh is animated
 		{
-			//do something
-			currentModel.animverts = new AuVert*[currentModel.numVerts * (framesInScene + 1)];
-			for (int i = 0; i < (framesInScene + 1); i++)
+			MessageBoxA(ip->GetMAXHWnd(), "Warning: Animated mesh is not yet supported. The mesh will render without animation.", "RGM Import - By Daylon", MB_ICONINFORMATION);
+			currentModel.animverts = new AuVert*[currentModel.numVerts * fps];
+			for (int i = 0; i < fps; i++)
 			{
 				for (int j = 0; j < currentModel.numVerts; j++)
 				{
@@ -637,7 +641,6 @@ int rgm2max::parseRig(FILE* file, Interface* ip, ImpInterface* ii)
 			}
 		}
 	}
-
 	if (rigMode == 0)
 	{
 		//rigPhysique(file, ip, ii);
@@ -666,49 +669,42 @@ int rgm2max::rigPhysique(FILE* file, Interface* ip, ImpInterface* ii)
 	IDerivedObject* meshDerived = CreateDerivedObject(currentObject);
 
 	if (meshDerived == NULL)
-		throw std::exception("meshDerived creation failed");
+	{
+		MessageBoxA(ip->GetMAXHWnd(), "meshDerived creation failed", "RGM Import - By Daylon", MB_ICONINFORMATION);
+		return 1;
+	}
 
 	// Link modifier to derived object
 	meshDerived->AddModifier(phyMod);
 
 	// Link node to object
-	//currentImpNode->Reference(meshDerived);
+	currentImpNode->Reference(meshDerived);
 
 	IPhysiqueImport* phyImport = (IPhysiqueImport*)phyMod->GetInterface(I_PHYIMPORT);
 	toAttach = ip->GetINodeByName(TEXT("Bip01"));
 	if (toAttach == NULL)
 	{
-		throw std::exception("Could not find Biped");
+		MessageBoxA(ip->GetMAXHWnd(), "Could not find biped", "RGM Import - By Daylon", MB_ICONINFORMATION);
 		return 1;
 	}
 	if (phyImport->AttachRootNode(toAttach, ip->GetTime()) == FALSE)
 	{
-		throw std::exception("Physique root node attach failed");
+		MessageBoxA(ip->GetMAXHWnd(), "Physique root node attach failed", "RGM Import - By Daylon", MB_ICONINFORMATION);
+		return 1;
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	IPhyContextImport* contextImport = phyImport->GetContextInterface(currentNode);
-	if (contextImport == NULL)
+	if (phyImport->InitializePhysique(currentNode, ip->GetTime()) == FALSE)
 	{
-		throw std::exception("Physique context import returned null");
+		MessageBoxA(ip->GetMAXHWnd(), "Error initializing physique", "RGM Import - By Daylon", MB_ICONINFORMATION);
+		return 1;
 	}
-	int a = contextImport->GetNumberVertices();
 
+	//IPhyContextImport* contextImport = phyImport->GetContextInterface(currentNode);
+	//if (contextImport == NULL)
+	//{
+	//	MessageBoxA(ip->GetMAXHWnd(), "Physique context import returned null", "RGM Import - By Daylon", MB_ICONINFORMATION);
+	//	return 1;
+	//}
+	/*
 	for (int i = 0; i < currentModel.numVerts; i++) // Set interface type for each vertex
 	{
 		if (currentModel.verts[i]->numRigVerts == 1)
@@ -720,12 +716,13 @@ int rgm2max::rigPhysique(FILE* file, Interface* ip, ImpInterface* ii)
 			toAttach = ip->GetINodeByName(nodeNameW.c_str());
 
 			temp->SetNode(toAttach); // Attach node
+			temp->LockVertex(TRUE);
 
 			contextImport->ReleaseVertexInterface(temp); // Release vertex interface
 		}
 		else
 		{
-			IPhyBlendedRigidVertexImport* temp = (IPhyBlendedRigidVertexImport*)contextImport->SetVertexInterface(i, BLENDED_TYPE);
+			IPhyBlendedRigidVertexImport* temp = (IPhyBlendedRigidVertexImport*)contextImport->SetVertexInterface(i, RIGID_BLENDED_TYPE);
 
 			for (int j = 0; j < currentModel.verts[i]->numRigVerts; j++)
 			{
@@ -742,11 +739,13 @@ int rgm2max::rigPhysique(FILE* file, Interface* ip, ImpInterface* ii)
 					temp->SetWeightedNode(toAttach, currentModel.verts[i]->rigVerts[j]->weight, FALSE); // Attach node
 				}
 			}
-
+			temp->LockVertex(TRUE);
 			contextImport->ReleaseVertexInterface(temp); // Release vertex interface
 		}
 	}
-	phyImport->ReleaseContextInterface(contextImport);
+	*/
+	//phyImport->ReleaseContextInterface(contextImport);
+	phyMod->ReleaseInterface(I_PHYIMPORT, phyImport);
 	return 0;
 }
 

@@ -3,5 +3,3 @@ My name is Daylon and I've been developing software for over 10 years. I have a 
 
 ## ✉️ Contact
 Personal Inquiries: Discord @ Daylon#0001
-
-Professional Inquiries: Daylonz@pm.me
